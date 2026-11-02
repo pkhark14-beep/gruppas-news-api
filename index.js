@@ -10,7 +10,6 @@ app.get('/api/news', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*'); 
     
     try {
-        // Парсим публичную веб-страницу Telegram-канала, где видны все старые посты и фото
         const url = `https://t.me/s/${CHANNEL_USERNAME}`;
         const { data } = await axios.get(url);
         const $ = cheerio.load(data);
@@ -36,13 +35,20 @@ app.get('/api/news', async (req, res) => {
                 });
             }
 
-            // Текст поста
-            const $textElem = $el.find('.tgme_widget_message_text');
-            const text = $textElem.length ? $textElem.html().replace(/<br\s*[\/]?>/gi, '\n') : '';
-            // Очищаем HTML теги внутри текста, оставляя переносы строк если нужно, или оставляем чистый текст
-            const cleanText = $el.find('.tgme_widget_message_text').text();
+            // Текст поста или описание опроса/медиа
+            let text = $el.find('.tgme_widget_message_text').html();
+            if (text) {
+                // Заменяем теги переноса строк на нормальные
+                text = text.replace(/<br\s*[\/]?>/gi, '\n');
+            } else {
+                // Если это опрос или медиа без текстового блока, пробуем взять подпись или указать тип
+                text = $el.find('.tgme_widget_message_poll_question').text() || 'Медиа-пост / Опрос';
+            }
 
-            // Картинка (фото) поста, если она есть
+            // Очищаем от HTML тегов для чистого текста
+            const cleanText = $('<div>').html(text).text();
+
+            // Картинка поста
             let photoUrl = null;
             const $photoStyle = $el.find('.tgme_widget_message_photo_wrap');
             if ($photoStyle.length) {
@@ -53,18 +59,17 @@ app.get('/api/news', async (req, res) => {
                 }
             }
 
-            // Добавляем пост, если в нем есть текст или картинка
             if (cleanText || photoUrl) {
                 posts.push({
                     id: postId,
                     date: formattedDate,
-                    text: cleanText || 'Медиа-пост',
+                    text: cleanText,
                     photo: photoUrl
                 });
             }
         });
 
-        // Переворачиваем, чтобы новые были сверху
+        // Отдаем в правильном хронологическом порядке (новые сверху)
         res.json(posts.reverse());
     } catch (e) {
         console.error('Ошибка парсинга:', e);
@@ -73,5 +78,5 @@ app.get('/api/news', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Сервер новостей с поддержкой истории и фото запущен на порту ${PORT}`);
+    console.log(`Сервер запущен на порту ${PORT}`);
 });
